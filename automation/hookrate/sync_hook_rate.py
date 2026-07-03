@@ -220,9 +220,10 @@ def normalize_name(name: str) -> str:
 def fetch_all_ad_insights(cfg: Config) -> dict[str, dict]:
     """Bulk-pull ad-level insights for the whole account in one paginated sweep.
 
-    Returns a map of normalized ad name -> insight dict. Names that appear more
-    than once map to the sentinel value {"_ambiguous": True} so the caller can
-    refuse to guess.
+    Returns a map of normalized ad name -> insight dict. Ad names are expected
+    to be unique; a name appearing on more than one Meta ad indicates a naming
+    mistake upstream, not a legitimate case to guess at, so it's tracked as
+    ambiguous and the caller skips it (see is_ambiguous / ambiguous_ad_ids).
     """
     url = f"{GRAPH_BASE}/{cfg.meta_ad_account_id}/insights"
     params = {
@@ -243,7 +244,7 @@ def fetch_all_ad_insights(cfg: Config) -> dict[str, dict]:
     }
 
     by_name: dict[str, dict] = {}
-    seen_names: set[str] = set()
+    ambiguous_ad_ids: dict[str, list[str]] = {}
     page = 0
     while url:
         page += 1
@@ -254,13 +255,22 @@ def fetch_all_ad_insights(cfg: Config) -> dict[str, dict]:
             key = normalize_name(row.get("ad_name", ""))
             if not key:
                 continue
-            if key in seen_names:
-                by_name[key] = {"_ambiguous": True}
+            if key in by_name:
+                ambiguous_ad_ids.setdefault(key, [by_name[key].get("ad_id", "")])
+                ambiguous_ad_ids[key].append(row.get("ad_id", ""))
+                by_name[key] = {"_ambiguous": True, "ad_name": row.get("ad_name")}
                 continue
-            seen_names.add(key)
             by_name[key] = row
         url = (data.get("paging") or {}).get("next")
         params = None  # `next` already carries all query params + token
+
+    for key, ad_ids in ambiguous_ad_ids.items():
+        name = by_name[key].get("ad_name", key)
+        log(
+            f"  WARNING: '{name}' is used by {len(ad_ids)} Meta ads "
+            f"(ad_ids: {', '.join(ad_ids)}) — ad names must be unique; "
+            f"rename the duplicate(s) in Meta. Skipping this name."
+        )
 
     return by_name
 
@@ -593,7 +603,7 @@ def run(cfg: Config) -> Summary:
                 summary.no_match += 1
                 continue
             if insight.get("_ambiguous"):
-                log(f"- '{title}' matches multiple ads by name; skipping")
+                log(f"- '{title}' matches multiple ads by name; skipping (see WARNING above)")
                 summary.no_match += 1
                 continue
 

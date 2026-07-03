@@ -116,6 +116,7 @@ Recommended verification order before trusting the daily cron:
 
 ## Troubleshooting
 
+- **HTTP 403 `Ad account owner has NOT grant ads_management or ads_read permission`** — the token's `ads_read` scope isn't the issue; the System User isn't assigned to the ad account as an asset. Business Settings → Users → System Users → select the user → **Assign Assets** → toggle on the ad account with at least "View performance" access. No need to regenerate the token.
 - **404 on Notion writes** — the integration isn't connected to the database (see setup step 1.2).
 - **No Meta ad matches '<title>'** — the Notion row title doesn't exactly match a Meta ad name (whitespace/case differences are normalized automatically, everything else isn't).
 - **matches multiple ads by name; skipping** — two+ Meta ads share a name; rename one or add an authoritative ad-id column (see BUILD_BRIEF.md §12).

@@ -1,0 +1,58 @@
+name: Hook Rate Sync
+
+# Syncs Meta ad hook rate + Facebook Ad Library links into the Notion board.
+# Runs on a daily schedule and can be triggered manually (defaults to dry-run).
+
+on:
+  schedule:
+    # 07:00 UTC every day. Adjust as needed (cron is in UTC).
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log intended writes, do not modify Notion)"
+        type: boolean
+        default: true
+      force_reprocess:
+        description: "Re-process rows already marked Synced"
+        type: boolean
+        default: false
+
+# Prevent overlapping runs.
+concurrency:
+  group: hook-rate-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r automation/hookrate/requirements.txt
+
+      - name: Run hook rate sync
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          # Manual runs honor the inputs; scheduled runs go live (dry_run=false).
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || 'false' }}
+          # Optional tuning — set as repo variables to override the defaults.
+          SPEND_THRESHOLD_GBP: ${{ vars.SPEND_THRESHOLD_GBP }}
+          META_DATE_PRESET: ${{ vars.META_DATE_PRESET }}
+          AD_LIBRARY_COUNTRY: ${{ vars.AD_LIBRARY_COUNTRY }}
+          WRITE_SPEND: ${{ vars.WRITE_SPEND }}
+          FAIL_ON_ERROR: ${{ vars.FAIL_ON_ERROR }}
+          PROP_HOOK_RATE: ${{ vars.PROP_HOOK_RATE }}
+          PROP_AD_LIBRARY: ${{ vars.PROP_AD_LIBRARY }}
+          PROP_STATUS: ${{ vars.PROP_STATUS }}
+          PROP_SPEND: ${{ vars.PROP_SPEND }}
+        run: python automation/hookrate/sync_hook_rate.py

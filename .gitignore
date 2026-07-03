@@ -1,0 +1,7 @@
+.env
+automation/hookrate/.env
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.claude/

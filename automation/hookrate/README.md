@@ -16,7 +16,7 @@ For every row on the Notion board:
    **hook rate = 3-second video views ÷ impressions × 100**.
 3. Builds the Facebook Ad Library deep link for that ad (falls back to a
    page-level link if an exact match isn't available).
-4. Writes **Hook Rate**, **Ad Library**, and marks **Sync Status = Synced**.
+4. Writes **Hook Rate**, **Ad Link**, and marks **Sync Status = Synced**.
 
 Already-synced rows are skipped on subsequent runs unless `FORCE_REPROCESS=true`.
 
@@ -28,7 +28,7 @@ Already-synced rows are skipped on subsequent runs unless `FORCE_REPROCESS=true`
 2. Open the target database → **⋯ → Connections → Add connections** → add the integration. (Required — without this, writes 404.)
 3. Make sure these columns exist (the script never creates/changes schema):
    - **Hook Rate** — Number
-   - **Ad Library** — URL
+   - **Ad Link** — URL
    - **Sync Status** — Select, Status, or Checkbox (value written: `Synced`)
    - *(optional)* **Spend** — Number, only written if `WRITE_SPEND=true`
 4. Copy the **database id** — the 32-hex-char segment in the database URL.
@@ -96,7 +96,8 @@ secrets/variables in CI).
 | `WRITE_SPEND` | `false` | Also write spend into a `Spend` column if present |
 | `FAIL_ON_ERROR` | `false` | Make the CI run red if any row errored |
 | `PROP_HOOK_RATE` | `Hook Rate` | Notion column name override |
-| `PROP_AD_LIBRARY` | `Ad Library` | Notion column name override |
+| `PROP_AD_LIBRARY` | `Ad Link` | Notion column name override |
+| `TEST_AD_NAME` | *(unset)* | If set, only the one Notion row whose title exactly matches this is processed — everything else is skipped. Handy for testing a single ad before running against the whole board. |
 | `PROP_STATUS` | `Sync Status` | Notion column name override |
 | `PROP_SPEND` | `Spend` | Notion column name override |
 

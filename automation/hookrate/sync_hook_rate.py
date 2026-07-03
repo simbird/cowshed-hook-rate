@@ -37,7 +37,7 @@ NOTION_VERSION = "2022-06-28"
 # Default names of the Notion properties we read/write. Override via env if the
 # team's board uses different names.
 DEFAULT_PROP_HOOK_RATE = "Hook Rate"
-DEFAULT_PROP_AD_LIBRARY = "Ad Library"
+DEFAULT_PROP_AD_LIBRARY = "Ad Link"
 DEFAULT_PROP_STATUS = "Sync Status"
 DEFAULT_PROP_SPEND = "Spend"  # optional audit column; skipped if it doesn't exist
 SYNCED_MARKER = "Synced"
@@ -93,6 +93,7 @@ class Config:
     prop_status: str = DEFAULT_PROP_STATUS
     prop_spend: str = DEFAULT_PROP_SPEND
     write_spend: bool = False
+    test_ad_name: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -133,6 +134,7 @@ class Config:
             prop_status=_env_str("PROP_STATUS", DEFAULT_PROP_STATUS),
             prop_spend=_env_str("PROP_SPEND", DEFAULT_PROP_SPEND),
             write_spend=_env_bool("WRITE_SPEND", False),
+            test_ad_name=os.environ.get("TEST_AD_NAME", "").strip() or None,
         )
 
 
@@ -524,6 +526,11 @@ def run(cfg: Config) -> Summary:
     log("Querying Notion board...")
     pages = notion_query_all_pages(cfg)
     log(f"  {len(pages)} rows on the board")
+
+    if cfg.test_ad_name:
+        target = normalize_name(cfg.test_ad_name)
+        pages = [p for p in pages if normalize_name(get_page_title(p)) == target]
+        log(f"  TEST_AD_NAME set; filtered to {len(pages)} matching row(s)")
 
     for page in pages:
         summary.processed += 1

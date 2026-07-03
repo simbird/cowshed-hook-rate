@@ -17,6 +17,10 @@ on:
         description: "Re-process rows already marked Synced"
         type: boolean
         default: false
+      test_ad_name:
+        description: "Only process the row with this exact ad name (leave blank to run the whole board)"
+        type: string
+        default: ""
 
 # Prevent overlapping runs.
 concurrency:
@@ -45,6 +49,7 @@ jobs:
           # Manual runs honor the inputs; scheduled runs go live (dry_run=false).
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
           FORCE_REPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.force_reprocess || 'false' }}
+          TEST_AD_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.test_ad_name || '' }}
           # Optional tuning — set as repo variables to override the defaults.
           SPEND_THRESHOLD_GBP: ${{ vars.SPEND_THRESHOLD_GBP }}
           META_DATE_PRESET: ${{ vars.META_DATE_PRESET }}

@@ -40,6 +40,11 @@ DEFAULT_PROP_HOOK_RATE = "Hook Rate"
 DEFAULT_PROP_AD_LIBRARY = "Ad Link"
 DEFAULT_PROP_STATUS = "Sync Status"
 DEFAULT_PROP_SPEND = "Spend"  # optional audit column; skipped if it doesn't exist
+# Property holding the value to match against the Meta ad name. Many boards use
+# a formula/rich-text column for this rather than the page's actual Title (the
+# page title is often a separate, human-authored label). Falls back to the
+# page title if this property doesn't exist or is empty.
+DEFAULT_PROP_AD_NAME = "Ad Name"
 SYNCED_MARKER = "Synced"
 
 
@@ -92,6 +97,7 @@ class Config:
     prop_ad_library: str = DEFAULT_PROP_AD_LIBRARY
     prop_status: str = DEFAULT_PROP_STATUS
     prop_spend: str = DEFAULT_PROP_SPEND
+    prop_ad_name: str = DEFAULT_PROP_AD_NAME
     write_spend: bool = False
     test_ad_name: Optional[str] = None
 
@@ -133,6 +139,7 @@ class Config:
             prop_ad_library=_env_str("PROP_AD_LIBRARY", DEFAULT_PROP_AD_LIBRARY),
             prop_status=_env_str("PROP_STATUS", DEFAULT_PROP_STATUS),
             prop_spend=_env_str("PROP_SPEND", DEFAULT_PROP_SPEND),
+            prop_ad_name=_env_str("PROP_AD_NAME", DEFAULT_PROP_AD_NAME),
             write_spend=_env_bool("WRITE_SPEND", False),
             test_ad_name=os.environ.get("TEST_AD_NAME", "").strip() or None,
         )
@@ -448,6 +455,45 @@ def get_prop(page: dict, name: str) -> Optional[dict]:
     return (page.get("properties") or {}).get(name)
 
 
+def get_property_text(page: dict, name: str) -> str:
+    """Return the plain-text value of a named property, whatever its type.
+
+    Handles the types commonly used to hold a matchable ad name: title,
+    rich_text, select, and formula (string/number/boolean results).
+    """
+    prop = get_prop(page, name)
+    if not prop:
+        return ""
+    ptype = prop.get("type")
+    if ptype == "title":
+        return "".join(p.get("plain_text", "") for p in (prop.get("title") or []))
+    if ptype == "rich_text":
+        return "".join(p.get("plain_text", "") for p in (prop.get("rich_text") or []))
+    if ptype == "select":
+        return (prop.get("select") or {}).get("name") or ""
+    if ptype == "formula":
+        formula = prop.get("formula") or {}
+        ftype = formula.get("type")
+        if ftype == "string":
+            return formula.get("string") or ""
+        if ftype == "number" and formula.get("number") is not None:
+            return str(formula["number"])
+        if ftype == "boolean":
+            return str(formula.get("boolean"))
+    return ""
+
+
+def get_match_name(cfg: Config, page: dict) -> str:
+    """Return the value to match against the Meta ad name.
+
+    Prefers cfg.prop_ad_name (a formula/rich-text/select column many boards
+    use instead of the page's actual Title), falling back to the page title
+    if that property is missing/empty.
+    """
+    value = get_property_text(page, cfg.prop_ad_name)
+    return value if value.strip() else get_page_title(page)
+
+
 def is_already_synced(cfg: Config, page: dict) -> bool:
     status = get_prop(page, cfg.prop_status)
     if status:
@@ -530,12 +576,12 @@ def run(cfg: Config) -> Summary:
 
     if cfg.test_ad_name:
         target = normalize_name(cfg.test_ad_name)
-        pages = [p for p in pages if normalize_name(get_page_title(p)) == target]
+        pages = [p for p in pages if normalize_name(get_match_name(cfg, p)) == target]
         log(f"  TEST_AD_NAME set; filtered to {len(pages)} matching row(s)")
 
     for page in pages:
         summary.processed += 1
-        title = get_page_title(page)
+        title = get_match_name(cfg, page)
         try:
             if is_already_synced(cfg, page) and not cfg.force_reprocess:
                 summary.already_synced += 1

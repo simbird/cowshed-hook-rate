@@ -11,7 +11,7 @@ design rationale. This README is the operator setup guide.
 
 For every row on the Notion board:
 
-1. Matches the row to a Meta ad by **ad name**.
+1. Matches the row to a Meta ad by **ad name**, read from the **Ad Name** property (falls back to the page Title if that property doesn't exist or is empty — see `PROP_AD_NAME`).
 2. If lifetime spend > £100 (configurable), computes
    **hook rate = 3-second video views ÷ impressions × 100**.
 3. Builds the Facebook Ad Library deep link for that ad (falls back to a
@@ -27,6 +27,7 @@ Already-synced rows are skipped on subsequent runs unless `FORCE_REPROCESS=true`
 1. Create an internal integration at <https://www.notion.so/my-integrations> and copy its token.
 2. Open the target database → **⋯ → Connections → Add connections** → add the integration. (Required — without this, writes 404.)
 3. Make sure these columns exist (the script never creates/changes schema):
+   - **Ad Name** — the value matched against the Meta ad name. Title, rich text, select, or formula (string/number/boolean) all work. If missing or blank on a row, the page Title is used instead.
    - **Hook Rate** — Number
    - **Ad Link** — URL
    - **Sync Status** — Select, Status, or Checkbox (value written: `Synced`)
@@ -97,7 +98,8 @@ secrets/variables in CI).
 | `FAIL_ON_ERROR` | `false` | Make the CI run red if any row errored |
 | `PROP_HOOK_RATE` | `Hook Rate` | Notion column name override |
 | `PROP_AD_LIBRARY` | `Ad Link` | Notion column name override |
-| `TEST_AD_NAME` | *(unset)* | If set, only the one Notion row whose title exactly matches this is processed — everything else is skipped. Handy for testing a single ad before running against the whole board. |
+| `PROP_AD_NAME` | `Ad Name` | Property matched against the Meta ad name (title/rich_text/select/formula). Falls back to the page Title if missing/empty. |
+| `TEST_AD_NAME` | *(unset)* | If set, only the one Notion row whose match name (per `PROP_AD_NAME`) exactly matches this is processed — everything else is skipped. Handy for testing a single ad before running against the whole board. |
 | `PROP_STATUS` | `Sync Status` | Notion column name override |
 | `PROP_SPEND` | `Spend` | Notion column name override |
 
@@ -121,6 +123,7 @@ Recommended verification order before trusting the daily cron:
   2. The `META_AD_ACCOUNT_ID` secret doesn't match an account the token can actually see. Check with `GET /v21.0/me/adaccounts?fields=name,account_id&access_token=<token>` — the id in the secret must match one of the `account_id` values returned (no `act_` prefix needed in the secret; the script adds it).
 - **HTTP 400 `video_3_sec_watched_actions is not valid for fields param`** — Meta has removed this field from current Graph API versions; requesting it fails the whole insights call. Already fixed in the deployed script (it no longer requests that field and uses the `actions`/`video_view` fallback instead). If you see this, you're running an older copy of `sync_hook_rate.py` — pull the latest.
 - **404 on Notion writes** — the integration isn't connected to the database (see setup step 1.2).
-- **No Meta ad matches '<title>'** — the Notion row title doesn't exactly match a Meta ad name (whitespace/case differences are normalized automatically, everything else isn't).
+- **`TEST_AD_NAME` filters to 0 rows even though the ad exists** — the match value isn't coming from where you think. By default the script reads the **Ad Name** property (title/rich_text/select/formula), not the page Title, unless that property is missing/empty. If your board keeps the matchable name somewhere else, set `PROP_AD_NAME` to that column's name.
+- **No Meta ad matches '<name>'** — the matched Notion value (see `PROP_AD_NAME` above) doesn't exactly equal a Meta ad name (whitespace/case differences are normalized automatically, everything else isn't).
 - **matches multiple ads by name; skipping** — two+ Meta ads share a name; rename one or add an authoritative ad-id column (see BUILD_BRIEF.md §12).
 - **Ad Library link is the page-level fallback, not exact** — either Ad Library API identity/location confirmation isn't complete yet, or creative body text didn't match closely enough. Not an error; link still works.

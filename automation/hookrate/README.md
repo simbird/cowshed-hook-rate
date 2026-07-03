@@ -116,7 +116,10 @@ Recommended verification order before trusting the daily cron:
 
 ## Troubleshooting
 
-- **HTTP 403 `Ad account owner has NOT grant ads_management or ads_read permission`** — the token's `ads_read` scope isn't the issue; the System User isn't assigned to the ad account as an asset. Business Settings → Users → System Users → select the user → **Assign Assets** → toggle on the ad account with at least "View performance" access. No need to regenerate the token.
+- **HTTP 403 `Ad account owner has NOT grant ads_management or ads_read permission`** — two possible causes:
+  1. The System User isn't assigned to the ad account as an asset (token scope alone isn't enough). Business Settings → Users → System Users → select the user → **Assign Assets** → toggle on the ad account with at least "View performance" access.
+  2. The `META_AD_ACCOUNT_ID` secret doesn't match an account the token can actually see. Check with `GET /v21.0/me/adaccounts?fields=name,account_id&access_token=<token>` — the id in the secret must match one of the `account_id` values returned (no `act_` prefix needed in the secret; the script adds it).
+- **HTTP 400 `video_3_sec_watched_actions is not valid for fields param`** — Meta has removed this field from current Graph API versions; requesting it fails the whole insights call. Already fixed in the deployed script (it no longer requests that field and uses the `actions`/`video_view` fallback instead). If you see this, you're running an older copy of `sync_hook_rate.py` — pull the latest.
 - **404 on Notion writes** — the integration isn't connected to the database (see setup step 1.2).
 - **No Meta ad matches '<title>'** — the Notion row title doesn't exactly match a Meta ad name (whitespace/case differences are normalized automatically, everything else isn't).
 - **matches multiple ads by name; skipping** — two+ Meta ads share a name; rename one or add an authoritative ad-id column (see BUILD_BRIEF.md §12).

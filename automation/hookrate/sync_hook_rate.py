@@ -229,7 +229,6 @@ def fetch_all_ad_insights(cfg: Config) -> dict[str, dict]:
                 "impressions",
                 "actions",
                 "video_play_actions",
-                "video_3_sec_watched_actions",
             ]
         ),
         "limit": 200,
@@ -263,8 +262,10 @@ def extract_3s_views(insight: dict) -> Optional[int]:
     """Pull the 3-second video view count from an insights row.
 
     Preference order:
-      1. video_3_sec_watched_actions
-      2. actions where action_type == "video_view" (Meta's 3-sec metric)
+      1. video_3_sec_watched_actions (kept for accounts/API versions where it
+         still appears; current Graph API versions reject it as an unknown
+         field if requested, so fetch_all_ad_insights no longer requests it)
+      2. actions where action_type == "video_view" (Meta's current 3-sec metric)
       3. video_play_actions (ThruPlay/plays — logged as an approximation)
     """
     def _sum(actions: Any) -> Optional[int]:

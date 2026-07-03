@@ -66,6 +66,15 @@ Meta exposes it inconsistently across accounts. Read the **first available** of:
 
 Then `hook_rate = round(3s_views / impressions * 100, 2)` (guard divide-by-zero).
 
+> **Update (discovered on first live run, v21.0):** Meta now rejects
+> `video_3_sec_watched_actions` outright as an unknown field — requesting it
+> makes the *entire* insights call fail with HTTP 400 (`#100`), not just omit
+> the field. The deployed script no longer requests it and relies on
+> preference #2 (`actions` / `video_view`), which is Meta's current standard
+> 3-second-view metric. The extraction function still checks for it first in
+> case a future API version reinstates it, but it will never actually be
+> present.
+
 ### 3b. The Ad Library API cannot be queried by ad id
 
 The **Ad Library API is separate** from the Marketing API and only supports

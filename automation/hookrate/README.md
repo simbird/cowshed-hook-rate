@@ -16,9 +16,13 @@ For every row on the Notion board:
    **hook rate = 3-second video views ÷ impressions × 100**.
 3. Builds the Facebook Ad Library deep link for that ad (falls back to a
    page-level link if an exact match isn't available).
-4. Writes **Hook Rate**, **Ad Link**, and marks **Sync Status = Synced**.
+4. Writes **Hook Rate** and **Ad Link**, and sets **Sync Status** depending on the outcome:
+   - **`Synced`** — hook rate was actually computed and written.
+   - **`Duplicate Ad Name`** — the Ad Name matches more than one Meta ad; see the `WARNING` line in the log for which `ad_id`s collide.
+   - **`Spend below £100`** — matched a Meta ad, but lifetime spend hasn't crossed the threshold yet.
+   - *(left unchanged)* — matched, spend is above threshold, but there's no video view data (e.g. a static/image ad) — nothing to mark Synced for, and no other status applies, so it's simply not touched.
 
-Already-synced rows are skipped on subsequent runs unless `FORCE_REPROCESS=true`.
+Rows already marked `Synced` are skipped on subsequent runs unless `FORCE_REPROCESS=true`. Rows marked `Duplicate Ad Name` or `Spend below £100` are **not** skipped — they're re-evaluated every run, since spend can cross the threshold or a duplicate can get fixed later.
 
 ## One-time setup
 
@@ -28,9 +32,9 @@ Already-synced rows are skipped on subsequent runs unless `FORCE_REPROCESS=true`
 2. Open the target database → **⋯ → Connections → Add connections** → add the integration. (Required — without this, writes 404.)
 3. Make sure these columns exist (the script never creates/changes schema):
    - **Ad Name** — the value matched against the Meta ad name. Title, rich text, select, or formula (string/number/boolean) all work. If missing or blank on a row, the page Title is used instead.
-   - **Hook Rate** — Number
+   - **Hook Rate** — Number. If you want it to display with a `%` sign, set its format to **Percent** in the column settings — the script writes the fraction (e.g. `0.4156` for 41.56%) specifically so Percent-formatted columns display correctly. If left as plain Number, it'll show the raw fraction, not the percentage.
    - **Ad Link** — URL
-   - **Sync Status** — Select, Status, or Checkbox (value written: `Synced`)
+   - **Sync Status** — Select, Status, or Checkbox. Values written: `Synced`, `Duplicate Ad Name`, `Spend below £100`. **If this is a Status property** (not Select), the API cannot create new options on the fly — you must manually add `Duplicate Ad Name` and `Spend below £100` as valid options in the property's settings first, or those writes will fail. Select properties don't have this restriction. Checkbox can only represent `Synced` (checked) vs. everything else (unchecked) — it can't distinguish duplicate from below-threshold.
    - *(optional)* **Spend** — Number, only written if `WRITE_SPEND=true`
 4. Copy the **database id** — the 32-hex-char segment in the database URL.
 

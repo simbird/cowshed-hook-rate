@@ -156,6 +156,22 @@ Body: { "properties": {
 }}
 ```
 
+> **Update (found on first real-board run):** two changes to the above, made
+> after live testing surfaced real issues:
+>
+> 1. **Hook Rate is written as a fraction, not the pre-multiplied percentage**
+>    (`0.4156`, not `41.56`). The team's Hook Rate column is a Number
+>    formatted as **Percent**, which multiplies by 100 for display — writing
+>    `41.56` directly displayed as `4156%`.
+> 2. **Sync Status now has three possible values**, not just `Synced`:
+>    `Synced` (hook rate actually computed), `Duplicate Ad Name` (ad name
+>    matched >1 Meta ad), `Spend below £100` (matched but under threshold).
+>    Only `Synced` is treated as terminal/skip-on-rerun — the other two are
+>    re-evaluated every run since the underlying condition can change.
+>    A matched ad with spend above threshold but no video data (a static/image
+>    ad) gets neither Hook Rate nor a status change — there's nothing to mark
+>    Synced for, and it isn't a duplicate or below-threshold case either.
+
 ---
 
 ## 5. Repository layout

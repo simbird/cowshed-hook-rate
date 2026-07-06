@@ -156,6 +156,22 @@ class ApiError(Exception):
     pass
 
 
+def _is_transient_meta_error(resp: requests.Response) -> bool:
+    """True if Meta flagged this error as safe to retry.
+
+    Meta's app-level rate limiting ("Application request limit reached",
+    code 4) and similar throttling errors often come back as HTTP 400/403,
+    not 429 — the reliable signal is the error.is_transient flag in the JSON
+    body, not the status code.
+    """
+    try:
+        payload = resp.json()
+    except ValueError:
+        return False
+    error = payload.get("error") if isinstance(payload, dict) else None
+    return bool(error and error.get("is_transient"))
+
+
 def request_json(
     method: str,
     url: str,
@@ -165,7 +181,8 @@ def request_json(
     json_body: Optional[dict] = None,
     max_retries: int = 5,
 ) -> dict:
-    """HTTP call returning parsed JSON, with exponential backoff on 429/5xx."""
+    """HTTP call returning parsed JSON, with exponential backoff on 429/5xx
+    and on any error Meta marks as transient (see _is_transient_meta_error)."""
     delay = 2.0
     last_exc: Optional[Exception] = None
     for attempt in range(1, max_retries + 1):
@@ -185,7 +202,7 @@ def request_json(
             delay *= 2
             continue
 
-        if resp.status_code == 429 or resp.status_code >= 500:
+        if resp.status_code == 429 or resp.status_code >= 500 or _is_transient_meta_error(resp):
             retry_after = resp.headers.get("Retry-After")
             wait = float(retry_after) if retry_after else delay
             log(

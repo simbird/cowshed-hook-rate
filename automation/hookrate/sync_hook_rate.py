@@ -46,6 +46,8 @@ DEFAULT_PROP_SPEND = "Spend"  # optional audit column; skipped if it doesn't exi
 # page title if this property doesn't exist or is empty.
 DEFAULT_PROP_AD_NAME = "Ad Name"
 SYNCED_MARKER = "Synced"
+DUPLICATE_MARKER = "Duplicate Ad Name"
+BELOW_THRESHOLD_MARKER = "Spend below £100"
 
 
 def _load_dotenv(path: str = ".env") -> None:
@@ -521,33 +523,61 @@ def is_already_synced(cfg: Config, page: dict) -> bool:
     return False
 
 
-def status_property_payload(cfg: Config, page: dict) -> Optional[dict]:
-    """Build the sync-marker property payload matching its schema type."""
+def status_property_payload(cfg: Config, page: dict, marker: str) -> Optional[dict]:
+    """Build the given status-marker property payload matching its schema type.
+
+    Checkbox properties can only represent True/False, so any marker other
+    than SYNCED_MARKER maps to unchecked (there's no way to distinguish
+    "duplicate" from "below threshold" on a checkbox).
+
+    Note for "status"-type properties (not "select"): Notion's API cannot
+    create new status options on the fly the way it can for "select" — the
+    exact option name (e.g. "Duplicate Ad Name") must already exist in the
+    property's configuration in the Notion UI, or the write will fail.
+    """
     status = get_prop(page, cfg.prop_status)
     if not status:
         return None
     ptype = status.get("type")
     if ptype == "select":
-        return {"select": {"name": SYNCED_MARKER}}
+        return {"select": {"name": marker}}
     if ptype == "status":
-        return {"status": {"name": SYNCED_MARKER}}
+        return {"status": {"name": marker}}
     if ptype == "checkbox":
-        return {"checkbox": True}
+        return {"checkbox": marker == SYNCED_MARKER}
     return None
 
 
+def notion_set_status(cfg: Config, page: dict, marker: str) -> None:
+    """Write only the Sync Status property (duplicate / below-threshold rows)."""
+    payload = status_property_payload(cfg, page, marker)
+    if not payload:
+        return
+    url = f"{NOTION_BASE}/pages/{page['id']}"
+    request_json(
+        "PATCH", url, headers=notion_headers(cfg),
+        json_body={"properties": {cfg.prop_status: payload}},
+    )
+    time.sleep(0.34)  # rate limit
+
+
 def notion_update_page(cfg: Config, page: dict, hook_rate: Optional[float],
-                       ad_library_url: Optional[str], spend: float) -> None:
+                       ad_library_url: Optional[str], spend: float,
+                       marker: Optional[str]) -> None:
     props: dict[str, Any] = {}
     if hook_rate is not None:
-        props[cfg.prop_hook_rate] = {"number": hook_rate}
+        # Notion's Percent-format Number property stores the fraction (e.g.
+        # 0.4156), not the pre-multiplied percentage — it multiplies by 100
+        # itself for display. Writing 41.56 directly shows as "4156%".
+        props[cfg.prop_hook_rate] = {"number": round(hook_rate / 100, 4)}
     if ad_library_url:
         props[cfg.prop_ad_library] = {"url": ad_library_url}
     if cfg.write_spend and get_prop(page, cfg.prop_spend):
         props[cfg.prop_spend] = {"number": round(spend, 2)}
-    status_payload = status_property_payload(cfg, page)
-    if status_payload:
-        props[cfg.prop_status] = status_payload
+    if marker:
+        status_payload = status_property_payload(cfg, page, marker)
+        if status_payload:
+            props[cfg.prop_status] = status_payload
 
     if not props:
         return
@@ -605,12 +635,20 @@ def run(cfg: Config) -> Summary:
             if insight.get("_ambiguous"):
                 log(f"- '{title}' matches multiple ads by name; skipping (see WARNING above)")
                 summary.no_match += 1
+                if cfg.dry_run:
+                    log(f"  [DRY RUN] would set Sync Status = '{DUPLICATE_MARKER}'")
+                else:
+                    notion_set_status(cfg, page, DUPLICATE_MARKER)
                 continue
 
             spend = float(insight.get("spend") or 0)
             if spend <= cfg.spend_threshold:
                 log(f"- '{title}' spend £{spend:.2f} <= £{cfg.spend_threshold:.0f}; skip")
                 summary.below_threshold += 1
+                if cfg.dry_run:
+                    log(f"  [DRY RUN] would set Sync Status = '{BELOW_THRESHOLD_MARKER}'")
+                else:
+                    notion_set_status(cfg, page, BELOW_THRESHOLD_MARKER)
                 continue
 
             impressions = int(float(insight.get("impressions") or 0))
@@ -618,6 +656,10 @@ def run(cfg: Config) -> Summary:
             hook_rate: Optional[float] = None
             if impressions and three_sec is not None:
                 hook_rate = round((three_sec / impressions) * 100, 2)
+            # Only mark Synced when there's an actual hook rate to show for it
+            # (e.g. static/image ads have no video views, so nothing is synced
+            # and Sync Status is left as-is rather than falsely marked done).
+            marker = SYNCED_MARKER if hook_rate is not None else None
 
             ad_id = insight.get("ad_id", "")
             ad_library_url = build_ad_library_url(cfg, ad_id, insight)
@@ -625,13 +667,13 @@ def run(cfg: Config) -> Summary:
             if cfg.dry_run:
                 log(
                     f"[DRY RUN] '{title}': spend=£{spend:.2f} hook_rate={hook_rate} "
-                    f"url={ad_library_url}"
+                    f"url={ad_library_url} status={marker or '(unchanged)'}"
                 )
             else:
-                notion_update_page(cfg, page, hook_rate, ad_library_url, spend)
+                notion_update_page(cfg, page, hook_rate, ad_library_url, spend, marker)
                 log(
                     f"+ '{title}': spend=£{spend:.2f} hook_rate={hook_rate} "
-                    f"url={ad_library_url}"
+                    f"url={ad_library_url} status={marker or '(unchanged)'}"
                 )
             summary.updated += 1
 
